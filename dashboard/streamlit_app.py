@@ -24,6 +24,7 @@ from dashboard.api_client import ApiClient, ApiError
 
 st.set_page_config(page_title="WebIntelX AI", page_icon="🛡️", layout="wide")
 theme.inject(st)
+theme.inject_step2(st)
 
 
 def _secret(name: str):
@@ -296,33 +297,35 @@ def investigation_page(site: dict) -> None:
         st.caption("Risk comes from documented, configuration-driven scoring; confidence is evidence quality. Neither is a probability.")
     with tabs[1]:
         rows = vm.timeline_rows(tl.get("timeline"))
+        st.subheader("Attack story")
+        st.markdown(theme.timeline(rows), unsafe_allow_html=True)
         if rows:
-            fig = go.Figure(go.Scatter(x=[r["timestamp"] for r in rows], y=list(range(len(rows), 0, -1)), mode="markers+text",
-                                       text=[r["label"][:60] for r in rows], textposition="middle right",
-                                       marker=dict(size=12, color=[r["color"] for r in rows]),
-                                       hovertext=[f"{r['evidence_label']}<br>events: {r['event_ids_short']}" for r in rows], hoverinfo="text"))
-            fig.update_yaxes(visible=False)
-            fig.update_layout(height=120 + 38 * len(rows), margin=dict(l=0, r=0, t=10, b=0))
-            st.plotly_chart(fig)
-            st.dataframe([{"time": r["timestamp"], "event": r["label"], "type": r["evidence_label"], "events": r["event_count"], "event ids": r["event_ids_short"]} for r in rows])
-        else:
-            st.info("No timeline entries.")
+            with st.expander("View evidence (all timeline entries)"):
+                st.dataframe([{"time": r["timestamp"], "event": r["label"], "type": r["evidence_label"], "events": r["event_count"], "event ids": r["event_ids_short"]} for r in rows])
     with tabs[2]:
         lay = vm.graph_layout(graph)
         if lay["nodes"]:
+            ntype = {n["id"]: n["evidence_type"] for n in lay["nodes"]}
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=[v for e in lay["edges"] for v in (e["x0"], e["x1"], None)], y=[v for e in lay["edges"] for v in (e["y0"], e["y1"], None)],
-                                     mode="lines", line=dict(width=1.5, color="#a0aec0"), hoverinfo="skip"))
+                                     mode="lines", line=dict(width=1.5, color="#4a5470"), hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=[(e["x0"] + e["x1"]) / 2 for e in lay["edges"]], y=[(e["y0"] + e["y1"]) / 2 for e in lay["edges"]], mode="text",
+                                     text=[str(e["relationship"]).replace("_", " ") for e in lay["edges"]], textfont=dict(size=10, color="#8b94a7"),
+                                     hovertext=[f"{vm.evidence_label(e['evidence_type'])}<br>ids: {vm.short_ids(e['event_ids'])}" for e in lay["edges"]], hoverinfo="text"))
             fig.add_trace(go.Scatter(x=[n["x"] for n in lay["nodes"]], y=[n["y"] for n in lay["nodes"]], mode="markers+text",
-                                     text=[n["label"][:28] for n in lay["nodes"]], textposition="bottom center", marker=dict(size=18, color="#2b6cb0"),
-                                     hovertext=[f"{n['type']}<br>{n['event_count']} events<br>ids: {vm.short_ids(n['event_ids'])}" for n in lay["nodes"]], hoverinfo="text"))
+                                     text=[n["label"][:28] for n in lay["nodes"]], textposition="bottom center", textfont=dict(color="#e6e9ef"),
+                                     marker=dict(size=20, color=[theme.node_color(n["evidence_type"]) for n in lay["nodes"]], line=dict(width=2, color="#0b0e14")),
+                                     hovertext=[f"{n['type']} · {vm.evidence_label(n['evidence_type'])}<br>{n['event_count']} events<br>ids: {vm.short_ids(n['event_ids'])}" for n in lay["nodes"]], hoverinfo="text"))
             fig.update_xaxes(visible=False)
             fig.update_yaxes(visible=False)
-            fig.update_layout(showlegend=False, height=460, margin=dict(l=0, r=0, t=10, b=40))
+            fig.update_layout(showlegend=False, height=460, margin=dict(l=0, r=0, t=10, b=40), paper_bgcolor=theme.PLOT_BG, plot_bgcolor=theme.PLOT_BG,
+                              font=dict(color="#e6e9ef"))
             st.plotly_chart(fig)
+            st.markdown(theme.graph_legend(), unsafe_allow_html=True)
             st.caption("Derived presentation layer: every node and edge lists the event ids it rests on.")
-            st.dataframe([{"edge": e["relationship"], "from": e["source"], "to": e["target"], "evidence": vm.evidence_label(e["evidence_type"]),
-                           "event ids": vm.short_ids(e["event_ids"])} for e in lay["edges"]])
+            with st.expander("View evidence (edges and event ids)"):
+                st.dataframe([{"edge": e["relationship"], "from": e["source"], "to": e["target"], "evidence": vm.evidence_label(e["evidence_type"]),
+                               "event ids": vm.short_ids(e["event_ids"])} for e in lay["edges"]])
         else:
             st.info("No graph available.")
     with tabs[3]:

@@ -120,3 +120,57 @@ def risk_card(risk: dict, rows: list[dict]) -> str:
 
 def human_note(text: str) -> str:
     return f'<div class="wx-human">🧑‍💻 <b>Analyst stays in control.</b> {_e(text)}</div>'
+
+
+# ---------------------------------------------------------------- step 2: attack story + graph styling
+_ET_TAG = {"observed": "FACT", "derived_metric": "DERIVED", "derived_indicator": "DERIVED", "derived_correlation": "DERIVED",
+           "ai_inference": "AI", "missing_evidence": "MISSING"}
+NODE_COLORS = {"observed": "#4f8cff", "derived": "#a78bfa", "ai_inference": "#f0c060", "missing_evidence": "#8b94a7"}
+PLOT_BG = "rgba(0,0,0,0)"
+
+
+def tag_for(evidence_type: str | None) -> str:
+    return tag(_ET_TAG.get(evidence_type or "", "DERIVED")) if (evidence_type or "") != "system" else '<span class="wx-pill sev-NONE">PLATFORM</span>'
+
+
+def node_color(evidence_type: str | None) -> str:
+    et = evidence_type or ""
+    return NODE_COLORS.get("derived" if et.startswith("derived") else et, "#6b7280")
+
+
+def timeline(rows: list[dict]) -> str:
+    """Vertical Attack Story. `rows` = vm.timeline_rows output. Evidence ids shown on every step (evidence-first)."""
+    if not rows:
+        return '<div class="wx-note">No timeline entries.</div>'
+    items = []
+    for i, r in enumerate(rows, 1):
+        n = r.get("event_count") or 0
+        items.append(
+            f'<div class="wx-step"><div class="wx-num">{i}</div><div class="wx-sbody">'
+            f'<div class="wx-st">{_e(str(r.get("label")))}</div>'
+            f'<div class="wx-sm">{_e(str(r.get("timestamp")))} &nbsp;{tag_for(r.get("evidence_type"))}</div>'
+            f'<div class="wx-sm">Evidence: {n} event(s) · {_e(str(r.get("event_ids_short") or "none"))}{" …" if r.get("event_ids_truncated") else ""}</div>'
+            f'</div></div>')
+    return f'<div class="wx-story">{"".join(items)}</div>'
+
+
+def graph_legend() -> str:
+    def dot(c, t):
+        return f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c};margin:0 5px 0 12px"></span>{t}'
+    return ('<div class="wx-note">' + dot(NODE_COLORS["observed"], "Observed event") + dot(NODE_COLORS["derived"], "Derived relationship")
+            + dot(NODE_COLORS["ai_inference"], "AI finding") + " &nbsp;· every node and edge traces to event IDs (hover).</div>")
+
+
+CSS_STEP2 = """
+<style>
+.wx-story{border-left:2px solid var(--bd);margin-left:14px;padding-left:0}
+.wx-step{display:flex;gap:14px;position:relative;margin:0 0 14px -15px}
+.wx-num{flex:0 0 28px;height:28px;border-radius:50%;background:var(--s2);border:2px solid var(--ai);color:var(--tx);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700}
+.wx-sbody{background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;flex:1}
+.wx-st{font-weight:650}.wx-sm{color:var(--mut);font-size:.8rem;margin-top:3px}
+</style>
+"""
+
+
+def inject_step2(st) -> None:
+    st.markdown(CSS_STEP2, unsafe_allow_html=True)
