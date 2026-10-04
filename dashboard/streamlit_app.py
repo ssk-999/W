@@ -18,10 +18,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard import embedded_backend
+from dashboard import theme
 from dashboard import viewmodels as vm
 from dashboard.api_client import ApiClient, ApiError
 
 st.set_page_config(page_title="WebIntelX AI", page_icon="🛡️", layout="wide")
+theme.inject(st)
 
 
 def _secret(name: str):
@@ -200,7 +202,8 @@ def _open_incident(incident_id: str) -> None:
 
 # ----------------------------------------------------------------------------------------------- dashboard
 def dashboard_page(site: dict) -> None:
-    st.header(f"Security Dashboard - {vm.md_escape(site['domain'])}")
+    theme.page_header(st, f"Security Dashboard - {site['domain']}", "Real-time visibility into web activity, suspicious behavior and active investigations.")
+    st.markdown(f'<div class="wx-flow">{theme._e(theme.FLOW)}</div>', unsafe_allow_html=True)
     wid = site["website_id"]
     c = client()
     try:
@@ -221,28 +224,19 @@ def dashboard_page(site: dict) -> None:
     cols[4].metric("High-risk incidents", k["high_risk_incidents"])
     st.caption("Counts are measured from this website's stored data. They are not production performance claims.")
 
+    st.subheader("From web activity to actionable intelligence")
+    st.markdown(theme.funnel(vm.funnel_rows(k)), unsafe_allow_html=True)
+    st.caption("Measured from this website's stored data; stages show real counts only.")
     left, right = st.columns([3, 2])
     with left:
-        st.subheader("Active incidents")
+        st.subheader("Priority investigations")
         cards = vm.incident_cards(incidents, alerts)
         if not cards:
             st.info("No incidents yet. Load the synthetic demo scenario from Onboarding, or send telemetry with the SDK.")
         for card in cards:
-            with st.container(border=True):
-                st.markdown(f"{badge(card['risk_level'])} &nbsp; {vm.md_escape(card['title'])}")
-                score = "not scored" if card["risk_score"] is None else f"{card['risk_score']:.1f}"
-                conf = "n/a" if card["confidence"] is None else f"{card['confidence']:.2f}"
-                st.caption(f"Risk score {score} · evidence confidence {conf} · status {card['status']} · {card['event_count'] or '?'} events"
-                           + (f" · alert {card['priority']}" if card["has_alert"] else "") + (" · contains SYNTHETIC data" if card["contains_synthetic"] else ""))
-                if card["affected_resources"]:
-                    md("Affected: " + ", ".join(card["affected_resources"]))
-                st.button("Investigate", key=f"open_{card['incident_id']}", on_click=_open_incident, args=(card["incident_id"],))
+            st.markdown(theme.incident_card(card), unsafe_allow_html=True)
+            st.button("Open investigation →", key=f"open_{card['incident_id']}", on_click=_open_incident, args=(card["incident_id"],))
     with right:
-        st.subheader("Reduction: events → investigations")
-        rows = vm.funnel_rows(k)
-        fig = go.Figure(go.Funnel(y=[r["stage"] for r in rows], x=[r["count"] for r in rows]))
-        fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=280)
-        st.plotly_chart(fig)
         st.subheader("Suspicious sessions")
         st.dataframe([{k2: s.get(k2) for k2 in ("session_key", "event_count", "finding_count", "rule_ids", "last_seen")} for s in sessions])
 
@@ -253,7 +247,7 @@ def dashboard_page(site: dict) -> None:
 
 # ----------------------------------------------------------------------------------------------- investigation
 def investigation_page(site: dict) -> None:
-    st.header("Incident investigation")
+    theme.page_header(st, "Incident investigation", "From suspicious visitor behavior to an explainable attack story.")
     c = client()
     try:
         incidents = c.incidents(site["website_id"])
@@ -292,8 +286,9 @@ def investigation_page(site: dict) -> None:
     tabs = st.tabs(["Summary", "Timeline", "Attack graph", "Evidence & AI", "Threat intelligence", "Risk", "Response", "Analyst actions", "Report"])
     with tabs[0]:
         level = (inc.get("risk_level") or "NOT SCORED").upper()
-        st.markdown(f"## {vm.md_escape(inc['title'])}")
-        st.markdown(badge(level) + f" &nbsp; score **{inc.get('risk_score')}** · evidence confidence **{inc.get('confidence')}** · status **{inc.get('status')}**")
+        st.markdown(theme.incident_header(inc), unsafe_allow_html=True)
+        st.markdown(theme.risk_card(risk, vm.risk_factor_rows(risk)), unsafe_allow_html=True)
+        st.markdown(theme.human_note("Recommendations are proposals; nothing is executed without your approval."), unsafe_allow_html=True)
         d = inc.get("details") or {}
         md("Affected resources: " + (", ".join(d.get("affected_resources") or []) or "none recorded"))
         for lim in d.get("limitations") or []:
@@ -340,9 +335,11 @@ def investigation_page(site: dict) -> None:
         if v.get("stale"):
             st.warning("This investigation may be out of date: " + vm.md_escape("; ".join(v["stale_reasons"])))
         st.subheader("Observed facts and derived metrics (authored by code)")
+        st.markdown(theme.tag("FACT") + " " + theme.tag("DERIVED"), unsafe_allow_html=True)
         for f in v["facts"]:
             md(f"[{f['label']}] {f['text']}   (refs: {', '.join(f['refs'])})")
         st.subheader("AI inference (not proof)")
+        st.markdown(theme.tag("AI"), unsafe_allow_html=True)
         if v["hypothesis"]:
             h = v["hypothesis"]
             md(f"Hypothesis: {h['statement']}")
@@ -350,6 +347,7 @@ def investigation_page(site: dict) -> None:
             for cl in v["claims"]:
                 md(f"• {cl['claim']}  [events: {vm.short_ids(cl['event_ids'])}]")
             st.subheader("Missing evidence")
+            st.markdown(theme.tag("MISSING") + " &nbsp;<span class='wx-note'>Missing evidence does not mean the incident is safe.</span>", unsafe_allow_html=True)
             for g in vm.evidence_gap_rows(risk, inv):
                 md(f"• ({g['source'].replace('_', ' ')}) {g['text']}")
             if v["alternatives"]:
@@ -502,7 +500,8 @@ def main() -> None:
     if not c.token:
         auth_page()
         return
-    st.sidebar.title("🛡️ WebIntelX AI")
+    with st.sidebar:
+        theme.brand(st)
     st.sidebar.caption(st.session_state.get("email", ""))
     try:
         sites = c.websites()
